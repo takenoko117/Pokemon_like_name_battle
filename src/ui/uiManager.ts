@@ -73,9 +73,9 @@ export class UIManager {
 
         <div class="preset-section">
           <span style="font-size: 13px; color: var(--text-dim);">おすすめ対決:</span>
-          <button class="preset-btn" data-p1="ピカチュウ" data-p2="リザードン">⚡ ピカチュウ vs 🔥 リザードン</button>
+          <button class="preset-btn" data-p1="ピカチュウ" data-p2="リザードン">⚡ ピカチュウ vs 🔥 リザードン (600超豪華)</button>
+          <button class="preset-btn" data-p1="リザードン" data-p2="白ひげ">🔥 リザードン(600超) vs 👑 白ひげ(1000超神話)</button>
           <button class="preset-btn" data-p1="ゆうしゃ" data-p2="まおう">⚔️ ゆうしゃ vs 👿 まおう</button>
-          <button class="preset-btn" data-p1="りんご" data-p2="みかん">🍎 りんご vs 🍊 みかん</button>
           <button class="preset-btn" data-p1="ChatGPT" data-p2="Gemini">🤖 ChatGPT vs 🔮 Gemini</button>
         </div>
 
@@ -90,7 +90,7 @@ export class UIManager {
       'ピカチュウ', 'リザードン', 'ミュウツー', 'カイリュー', 'ゲンガー',
       'カビゴン', 'ルギア', 'ホウオウ', 'レックウザ', 'ガブリアス',
       'アルセウス', 'ゲッコウガ', 'ミミッキュ', 'ザシアン', 'コライドン',
-      '田中', '佐藤', 'スティーブ', 'アリス', 'ボブ',
+      '白ひげ', '究極ドライバー', '田中', '佐藤', 'スティーブ',
       'カレーライス', 'ラーメン', 'すし', 'やきにく', 'ピザ',
       'ドラゴン', 'フェニックス', 'ゴーレム', 'オーガ', 'スライム'
     ];
@@ -267,13 +267,23 @@ export class UIManager {
         `;
       }
 
+      let bstClass = '';
+      let bstLabel = `合計種族値: ${m.stats.total}`;
+      if (m.stats.total > 1000) {
+        bstClass = 'bst-godlike';
+        bstLabel = `👑 合計種族値: ${m.stats.total} 【神話級・オーラ全解放】`;
+      } else if (m.stats.total > 600) {
+        bstClass = 'bst-legendary';
+        bstLabel = `🌟 合計種族値: ${m.stats.total} 【伝説級・豪華オーラ展開】`;
+      }
+
       return `
         <div class="monster-summary-card">
           <div class="player-header ${pClass}" style="width:100%; margin-bottom:8px;">${pLabel}</div>
           ${previewHtml}
           <div class="monster-name-title">${m.name}</div>
           <div class="type-badges">${typeBadges}</div>
-          <div class="bst-banner">合計ステータス: ${m.stats.total}</div>
+          <div class="bst-banner ${bstClass}">${bstLabel}</div>
           <div class="stats-bars">${statRows}</div>
           <div class="moves-list">${movesHtml}</div>
         </div>
@@ -412,6 +422,12 @@ export class UIManager {
       .map(t => `<span class="type-badge" style="background:${TYPE_INFO[t].badgeBg}; font-size:10px; padding:1px 5px;">${TYPE_INFO[t].name}</span>`)
       .join(' ');
 
+    const getAuraBadge = (m: Monster) => {
+      if (m.stats.total > 1000) return '<span class="aura-badge aura-badge-god">神話級オーラ</span>';
+      if (m.stats.total > 600) return '<span class="aura-badge aura-badge-leg">伝説級オーラ</span>';
+      return '';
+    };
+
     this.container.innerHTML = `
       <header class="game-header">
         <h1 class="game-title">BATTLE ARENA</h1>
@@ -429,7 +445,7 @@ export class UIManager {
           <div class="fighter-sprite-wrapper p2" id="sprite-wrap-p2"></div>
           <div class="status-plate p2">
             <div class="plate-header">
-              <span class="plate-name">${p2.name}</span>
+              <span class="plate-name">${p2.name}</span>${getAuraBadge(p2)}
               <span class="plate-level">Lv.50</span>
             </div>
             <div style="margin-bottom:4px;">${renderTypeTags(p2)}</div>
@@ -447,7 +463,7 @@ export class UIManager {
           <div class="fighter-sprite-wrapper p1" id="sprite-wrap-p1"></div>
           <div class="status-plate p1">
             <div class="plate-header">
-              <span class="plate-name">${p1.name}</span>
+              <span class="plate-name">${p1.name}</span>${getAuraBadge(p1)}
               <span class="plate-level">Lv.50</span>
             </div>
             <div style="margin-bottom:4px;">${renderTypeTags(p1)}</div>
@@ -798,9 +814,19 @@ export class UIManager {
           </div>
         `;
 
+        const winnerAuraTag = winnerMonster.stats.total > 1000
+          ? '<span class="aura-badge aura-badge-god" style="font-size:11px; padding:2px 8px;">👑 神話級オーラ</span>'
+          : (winnerMonster.stats.total > 600
+            ? '<span class="aura-badge aura-badge-leg" style="font-size:11px; padding:2px 8px;">🌟 伝説級オーラ</span>'
+            : '');
+
         details = `
           ${modalToggleHtml}
           ${previewHtml}
+          <div style="margin: 4px 0;">
+            <span style="font-size: 13px; font-weight: bold; color: var(--accent-gold);">種族値合計: ${winnerMonster.stats.total}</span>
+            ${winnerAuraTag}
+          </div>
           <p style="font-size: 14px; color: var(--text-dim);">${reasonStr}</p>
           <p style="font-size: 13px; color: #cbd5e1; margin-top: 4px;">
             残りHP: ${isP1Win ? result.p1FinalHp : result.p2FinalHp} / ${result.winner.maxHp}

@@ -446,6 +446,66 @@ body {
   border-radius: 4px;
   margin-bottom: 12px;
   border: 1px solid #434960;
+  transition: all 0.3s ease;
+}
+
+/* 600超え 伝説級・600族スタイル */
+.bst-banner.bst-legendary {
+  background: linear-gradient(135deg, #3d2f0a 0%, #1e2230 65%);
+  color: #fde047;
+  border: 1px solid #eab308;
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.45);
+  font-weight: bold;
+  animation: pulse-legendary 2.2s infinite ease-in-out;
+}
+
+@keyframes pulse-legendary {
+  0%, 100% { box-shadow: 0 0 10px rgba(234, 179, 8, 0.35); }
+  50% { box-shadow: 0 0 18px rgba(234, 179, 8, 0.7); }
+}
+
+/* 1000超え 神話級・規格外スタイル */
+.bst-banner.bst-godlike {
+  background: linear-gradient(135deg, #1e0b36 0%, #0a2540 50%, #2a0845 100%);
+  color: #ffffff;
+  border: 1px solid #38bdf8;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.6), 0 0 24px rgba(236, 72, 153, 0.4);
+  font-weight: bold;
+  animation: pulse-godlike 1.8s infinite ease-in-out;
+}
+
+@keyframes pulse-godlike {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.5), 0 0 20px rgba(236, 72, 153, 0.3);
+    border-color: #38bdf8;
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(56, 189, 248, 0.9), 0 0 32px rgba(236, 72, 153, 0.7);
+    border-color: #f43f5e;
+  }
+}
+
+.aura-badge {
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.aura-badge-leg {
+  background: #78350f;
+  color: #fef08a;
+  border: 1px solid #f59e0b;
+}
+
+.aura-badge-god {
+  background: linear-gradient(90deg, #701a75, #1e3a8a);
+  color: #67e8f9;
+  border: 1px solid #06b6d4;
+  animation: pulse-godlike 1.5s infinite ease-in-out;
 }
 
 .stats-bars {

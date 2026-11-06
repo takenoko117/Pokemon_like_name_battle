@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PokemonType, Stats } from '../types';
 import { TYPE_INFO } from '../core/typeChart';
 import { createRNG } from '../core/generator';
+import { createMonsterAura, MonsterAura } from './monsterAura';
 
 export type AnimationState = 'idle' | 'attack' | 'hit' | 'faint';
 
@@ -9,6 +10,7 @@ export interface Monster3DModel {
   root: THREE.Group;
   materials: THREE.Material[];
   geometries: THREE.BufferGeometry[];
+  aura?: MonsterAura;
   update: (delta: number, state: AnimationState, totalTime: number) => void;
   dispose: () => void;
 }
@@ -831,6 +833,13 @@ export function generateMonster3D(
   }
 
   // ==========================================
+  // オーラ & パーティクルシステム
+  // (合計種族値に応じた通常 / 600超え豪華 / 1000超え神話級演出)
+  // ==========================================
+  const aura = createMonsterAura(primaryType, secondaryType, stats);
+  root.add(aura.group);
+
+  // ==========================================
   // 更新＆アニメーション関数
   // ==========================================
   let attackProgress = 0;
@@ -842,6 +851,9 @@ export function generateMonster3D(
     state: AnimationState,
     totalTime: number
   ) => {
+    // オーラ・パーティクルシステムの更新
+    aura.update(delta, state, totalTime);
+
     const adjTime = totalTime * animSpeedMultiplier;
     // 1. Idle アニメーション (呼吸・揺らめき)
     const breath = Math.sin(adjTime * 3.0);
@@ -947,14 +959,16 @@ export function generateMonster3D(
   };
 
   const dispose = () => {
+    aura.dispose();
     geometries.forEach((g) => g.dispose());
     materials.forEach((m) => m.dispose());
   };
 
   return {
     root,
-    materials,
-    geometries,
+    materials: [...materials, ...aura.materials],
+    geometries: [...geometries, ...aura.geometries],
+    aura,
     update,
     dispose,
   };
