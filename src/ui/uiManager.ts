@@ -4,6 +4,9 @@ import { generateMonsterSprite } from '../core/pixelMonster';
 import { TYPE_INFO } from '../core/typeChart';
 import { BattleResult, Monster } from '../types';
 import { retroAudio } from './retroAudio';
+import { Monster3DViewer } from '../three/monster3dViewer';
+
+export type DisplayMode = '3d' | '2d' | 'compare';
 
 export class UIManager {
   private container: HTMLElement;
@@ -15,6 +18,11 @@ export class UIManager {
   private currentSpeed: number = 1; // 1, 2, 4
   private isSkipping: boolean = false;
 
+  private displayMode: DisplayMode = '3d';
+  private viewers: Monster3DViewer[] = [];
+  private p1ArenaViewer: Monster3DViewer | null = null;
+  private p2ArenaViewer: Monster3DViewer | null = null;
+
   constructor(container: HTMLElement) {
     this.container = container;
   }
@@ -23,15 +31,26 @@ export class UIManager {
     this.renderInputView();
   }
 
+  private clearViewers() {
+    this.viewers.forEach((v) => v.dispose());
+    this.viewers = [];
+    this.p1ArenaViewer = null;
+    this.p2ArenaViewer = null;
+  }
+
   /**
    * 画面1: 名前入力画面
    */
   private renderInputView() {
+    this.clearViewers();
+
     this.container.innerHTML = `
       <header class="game-header">
         <h1 class="game-title">NAME BATTLER</h1>
         <p class="game-subtitle">名前から生まれるモンスターのポケモン準拠オートバトル</p>
       </header>
+
+      ${this.renderModeToggleBar(false)}
 
       <div class="retro-box input-view">
         <div class="names-grid">
@@ -95,6 +114,23 @@ export class UIManager {
       });
     });
 
+    // トグルボタンイベント
+    this.container.querySelectorAll('.mode-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        retroAudio.playSelect();
+        const target = e.currentTarget as HTMLElement;
+        const newMode = target.dataset.mode as DisplayMode;
+        if (newMode && newMode !== this.displayMode) {
+          this.displayMode = newMode;
+          this.container.querySelectorAll('.mode-toggle-btn').forEach(b => {
+            const m = (b as HTMLElement).dataset.mode;
+            b.classList.toggle('active', m === this.displayMode);
+            b.classList.toggle('active-2d', m === '2d' && this.displayMode === '2d');
+          });
+        }
+      });
+    });
+
     document.getElementById('start-summon-btn')?.addEventListener('click', () => {
       retroAudio.playSelect();
       const n1 = p1Input.value.trim() || 'プレイヤー1';
@@ -120,12 +156,45 @@ export class UIManager {
   }
 
   /**
+   * モード切り替えバーのHTML生成
+   */
+  private renderModeToggleBar(allowCompare: boolean = false): string {
+    return `
+      <div class="mode-toggle-bar">
+        <span class="mode-toggle-label">RENDER:</span>
+        <div class="mode-toggle-buttons">
+          <button class="mode-toggle-btn ${this.displayMode === '3d' ? 'active' : ''}" data-mode="3d">
+            ✨ 3Dモデル
+          </button>
+          <button class="mode-toggle-btn ${this.displayMode === '2d' ? 'active active-2d' : ''}" data-mode="2d">
+            👾 2Dドット
+          </button>
+          ${
+            allowCompare
+              ? `<button class="mode-toggle-btn ${this.displayMode === 'compare' ? 'active active-compare' : ''}" data-mode="compare">
+                  ⚖️ 2D/3D比較
+                </button>`
+              : ''
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  /**
    * 画面2: モンスター能力・技の開示画面
    */
   private renderRevealView() {
     if (!this.p1Monster || !this.p2Monster) return;
+    this.clearViewers();
 
-    const renderCard = (m: Monster, sprite: string, pLabel: string, pClass: string) => {
+    const renderCard = (
+      m: Monster,
+      sprite: string,
+      pLabel: string,
+      pClass: string,
+      pId: string
+    ) => {
       const typeBadges = m.types
         .map(t => {
           const info = TYPE_INFO[t];
@@ -133,7 +202,7 @@ export class UIManager {
         })
         .join(' ');
 
-      const maxStat = 250; // バーの基準スケール
+      const maxStat = 250;
       const statRows = [
         { label: 'HP', val: m.stats.hp, col: '#10b981' },
         { label: 'こうげき', val: m.stats.attack, col: '#ef4444' },
@@ -165,12 +234,43 @@ export class UIManager {
         `;
       }).join('');
 
-      return `
-        <div class="monster-summary-card">
-          <div class="player-header ${pClass}" style="width:100%; margin-bottom:8px;">${pLabel}</div>
+      let previewHtml = '';
+      if (this.displayMode === '3d') {
+        previewHtml = `
+          <div class="monster-sprite-box">
+            <div class="monster-3d-canvas-wrap" id="${pId}-3d-wrap"></div>
+            <span class="drag-hint">🔄 ドラッグで回転</span>
+          </div>
+        `;
+      } else if (this.displayMode === '2d') {
+        previewHtml = `
           <div class="monster-sprite-box">
             <img src="${sprite}" alt="${m.name}" />
           </div>
+        `;
+      } else {
+        // compare
+        previewHtml = `
+          <div class="monster-compare-box">
+            <div class="compare-col">
+              <span class="compare-badge">👾 2Dドット</span>
+              <div class="compare-preview-2d">
+                <img src="${sprite}" alt="${m.name}" />
+              </div>
+            </div>
+            <div class="compare-col">
+              <span class="compare-badge">✨ 3Dモデル</span>
+              <div class="compare-preview-3d" id="${pId}-compare-3d-wrap"></div>
+              <span class="drag-hint">🔄 回転</span>
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="monster-summary-card">
+          <div class="player-header ${pClass}" style="width:100%; margin-bottom:8px;">${pLabel}</div>
+          ${previewHtml}
           <div class="monster-name-title">${m.name}</div>
           <div class="type-badges">${typeBadges}</div>
           <div class="bst-banner">合計ステータス: ${m.stats.total}</div>
@@ -183,13 +283,15 @@ export class UIManager {
     this.container.innerHTML = `
       <header class="game-header">
         <h1 class="game-title">STATUS REVEAL</h1>
-        <p class="game-subtitle">両モンスターの能力値と習得技が開示されました！</p>
+        <p class="game-subtitle">モンスターの能力値・造形が開示されました！</p>
       </header>
+
+      ${this.renderModeToggleBar(true)}
 
       <div class="retro-box reveal-view">
         <div class="monsters-reveal-grid">
-          ${renderCard(this.p1Monster, this.p1SpriteUrl, 'PLAYER 1', 'p1')}
-          ${renderCard(this.p2Monster, this.p2SpriteUrl, 'PLAYER 2', 'p2')}
+          ${renderCard(this.p1Monster, this.p1SpriteUrl, 'PLAYER 1', 'p1', 'reveal-p1')}
+          ${renderCard(this.p2Monster, this.p2SpriteUrl, 'PLAYER 2', 'p2', 'reveal-p2')}
         </div>
 
         <div style="display:flex; gap:12px; margin-top:8px;">
@@ -198,6 +300,76 @@ export class UIManager {
         </div>
       </div>
     `;
+
+    // 3Dモデルビューアのバインド
+    if (this.displayMode === '3d') {
+      const p1Wrap = document.getElementById('reveal-p1-3d-wrap');
+      const p2Wrap = document.getElementById('reveal-p2-3d-wrap');
+      if (p1Wrap) {
+        this.viewers.push(
+          new Monster3DViewer(
+            p1Wrap,
+            this.p1Monster.spriteSeed,
+            this.p1Monster.types[0],
+            this.p1Monster.types[1],
+            this.p1Monster.stats,
+            { autoRotate: true, viewAngle: 'front' }
+          )
+        );
+      }
+      if (p2Wrap) {
+        this.viewers.push(
+          new Monster3DViewer(
+            p2Wrap,
+            this.p2Monster.spriteSeed,
+            this.p2Monster.types[0],
+            this.p2Monster.types[1],
+            this.p2Monster.stats,
+            { autoRotate: true, viewAngle: 'front' }
+          )
+        );
+      }
+    } else if (this.displayMode === 'compare') {
+      const p1CompareWrap = document.getElementById('reveal-p1-compare-3d-wrap');
+      const p2CompareWrap = document.getElementById('reveal-p2-compare-3d-wrap');
+      if (p1CompareWrap) {
+        this.viewers.push(
+          new Monster3DViewer(
+            p1CompareWrap,
+            this.p1Monster.spriteSeed,
+            this.p1Monster.types[0],
+            this.p1Monster.types[1],
+            this.p1Monster.stats,
+            { autoRotate: true, viewAngle: 'front' }
+          )
+        );
+      }
+      if (p2CompareWrap) {
+        this.viewers.push(
+          new Monster3DViewer(
+            p2CompareWrap,
+            this.p2Monster.spriteSeed,
+            this.p2Monster.types[0],
+            this.p2Monster.types[1],
+            this.p2Monster.stats,
+            { autoRotate: true, viewAngle: 'front' }
+          )
+        );
+      }
+    }
+
+    // トグルボタンイベント
+    this.container.querySelectorAll('.mode-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        retroAudio.playSelect();
+        const target = e.currentTarget as HTMLElement;
+        const newMode = target.dataset.mode as DisplayMode;
+        if (newMode && newMode !== this.displayMode) {
+          this.displayMode = newMode;
+          this.renderRevealView();
+        }
+      });
+    });
 
     document.getElementById('back-input-btn')?.addEventListener('click', () => {
       retroAudio.playSelect();
@@ -227,11 +399,14 @@ export class UIManager {
   }
 
   /**
-   * バトルアリーナのHTML描画
+   * バトルアリーナの描画
    */
   private renderBattleArena(result: BattleResult) {
-    const p1 = this.p1Monster!;
-    const p2 = this.p2Monster!;
+    if (!this.p1Monster || !this.p2Monster) return;
+    this.clearViewers();
+
+    const p1 = this.p1Monster;
+    const p2 = this.p2Monster;
 
     const renderTypeTags = (m: Monster) => m.types
       .map(t => `<span class="type-badge" style="background:${TYPE_INFO[t].badgeBg}; font-size:10px; padding:1px 5px;">${TYPE_INFO[t].name}</span>`)
@@ -245,13 +420,13 @@ export class UIManager {
         </div>
       </header>
 
+      ${this.renderModeToggleBar(false)}
+
       <div class="retro-box battle-view">
         <div class="battle-arena">
           <!-- P2 (奥) -->
           <div class="ground-p2"></div>
-          <div class="fighter-sprite-wrapper p2" id="sprite-wrap-p2">
-            <img id="img-p2" src="${this.p2SpriteUrl}" alt="${p2.name}" />
-          </div>
+          <div class="fighter-sprite-wrapper p2" id="sprite-wrap-p2"></div>
           <div class="status-plate p2">
             <div class="plate-header">
               <span class="plate-name">${p2.name}</span>
@@ -269,9 +444,7 @@ export class UIManager {
 
           <!-- P1 (手前) -->
           <div class="ground-p1"></div>
-          <div class="fighter-sprite-wrapper p1" id="sprite-wrap-p1">
-            <img id="img-p1" src="${this.p1SpriteUrl}" alt="${p1.name}" />
-          </div>
+          <div class="fighter-sprite-wrapper p1" id="sprite-wrap-p1"></div>
           <div class="status-plate p1">
             <div class="plate-header">
               <span class="plate-name">${p1.name}</span>
@@ -307,6 +480,28 @@ export class UIManager {
       </div>
     `;
 
+    // アリーナ上のモンスターをセット
+    this.updateArenaFighters();
+
+    // トグルボタンイベント
+    this.container.querySelectorAll('.mode-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        retroAudio.playSelect();
+        const target = e.currentTarget as HTMLElement;
+        const newMode = target.dataset.mode as DisplayMode;
+        if (newMode && newMode !== this.displayMode && newMode !== 'compare') {
+          this.displayMode = newMode;
+          this.updateArenaFighters();
+          // トグルUIのactive更新
+          this.container.querySelectorAll('.mode-toggle-btn').forEach(b => {
+            const m = (b as HTMLElement).dataset.mode;
+            b.classList.toggle('active', m === this.displayMode);
+            b.classList.toggle('active-2d', m === '2d' && this.displayMode === '2d');
+          });
+        }
+      });
+    });
+
     // 速度ボタン
     const spd1 = document.getElementById('spd-1x')!;
     const spd2 = document.getElementById('spd-2x')!;
@@ -336,6 +531,64 @@ export class UIManager {
   }
 
   /**
+   * バトルアリーナ内のP1・P2モンスター表示の更新（2D / 3D 切り替え）
+   */
+  private updateArenaFighters() {
+    if (!this.p1Monster || !this.p2Monster) return;
+
+    const wrapP1 = document.getElementById('sprite-wrap-p1');
+    const wrapP2 = document.getElementById('sprite-wrap-p2');
+    if (!wrapP1 || !wrapP2) return;
+
+    // 既存ビューアの破棄
+    if (this.p1ArenaViewer) {
+      this.p1ArenaViewer.dispose();
+      this.p1ArenaViewer = null;
+    }
+    if (this.p2ArenaViewer) {
+      this.p2ArenaViewer.dispose();
+      this.p2ArenaViewer = null;
+    }
+
+    wrapP1.innerHTML = '';
+    wrapP2.innerHTML = '';
+
+    if (this.displayMode === '3d') {
+      const box1 = document.createElement('div');
+      box1.className = 'fighter-3d-box';
+      wrapP1.appendChild(box1);
+
+      const box2 = document.createElement('div');
+      box2.className = 'fighter-3d-box';
+      wrapP2.appendChild(box2);
+
+      this.p1ArenaViewer = new Monster3DViewer(
+        box1,
+        this.p1Monster.spriteSeed,
+        this.p1Monster.types[0],
+        this.p1Monster.types[1],
+        this.p1Monster.stats,
+        { viewAngle: 'p1-arena', interactive: false }
+      );
+      this.viewers.push(this.p1ArenaViewer);
+
+      this.p2ArenaViewer = new Monster3DViewer(
+        box2,
+        this.p2Monster.spriteSeed,
+        this.p2Monster.types[0],
+        this.p2Monster.types[1],
+        this.p2Monster.stats,
+        { viewAngle: 'p2-arena', interactive: false }
+      );
+      this.viewers.push(this.p2ArenaViewer);
+    } else {
+      // 2D
+      wrapP1.innerHTML = `<img id="img-p1" src="${this.p1SpriteUrl}" alt="${this.p1Monster.name}" />`;
+      wrapP2.innerHTML = `<img id="img-p2" src="${this.p2SpriteUrl}" alt="${this.p2Monster.name}" />`;
+    }
+  }
+
+  /**
    * バトルログのアニメーション逐次再生
    */
   private async playBattleSequence(result: BattleResult) {
@@ -362,6 +615,9 @@ export class UIManager {
       const defenderHpFill = document.getElementById(isP1Attacking ? 'hp-fill-p2' : 'hp-fill-p1');
       const defenderHpNum = document.getElementById(isP1Attacking ? 'hp-num-p2' : 'hp-num-p1');
 
+      const attackerViewer = isP1Attacking ? this.p1ArenaViewer : this.p2ArenaViewer;
+      const defenderViewer = isP1Attacking ? this.p2ArenaViewer : this.p1ArenaViewer;
+
       // 1. 技名コール
       retroAudio.playAttack();
       if (msgBox) {
@@ -375,6 +631,8 @@ export class UIManager {
 
       // 攻撃側のアニメーション
       attackerWrap?.classList.add(isP1Attacking ? 'attacking-p1' : 'attacking-p2');
+      attackerViewer?.triggerAttack(400);
+
       await delay(400);
       attackerWrap?.classList.remove(isP1Attacking ? 'attacking-p1' : 'attacking-p2');
 
@@ -389,6 +647,7 @@ export class UIManager {
 
       // 被弾リアクション
       defenderWrap?.classList.add('taking-hit');
+      defenderViewer?.triggerHit(450);
 
       // サウンド
       if (log.typeMultiplier === 0) {
@@ -441,6 +700,7 @@ export class UIManager {
       if (log.isFainted) {
         retroAudio.playFaint();
         defenderWrap?.classList.add('fainted');
+        defenderViewer?.triggerFaint();
         if (msgBox) {
           msgBox.innerHTML += `<div class="message-line" style="color:#f87171; font-weight:bold;">${log.defenderName} は たおれた！</div>`;
         }
@@ -486,6 +746,11 @@ export class UIManager {
       const loserIsP1 = result.loser?.name === this.p1Monster?.name;
       const loserWrap = document.getElementById(loserIsP1 ? 'sprite-wrap-p1' : 'sprite-wrap-p2');
       loserWrap?.classList.add('fainted');
+      if (loserIsP1) {
+        this.p1ArenaViewer?.triggerFaint();
+      } else {
+        this.p2ArenaViewer?.triggerFaint();
+      }
     }
   }
 
@@ -499,56 +764,114 @@ export class UIManager {
 
     let resultTitle = '';
     let winnerSprite = '';
-    let details = '';
 
-    if (result.isDraw) {
-      resultTitle = 'DRAW (引き分け！)';
-      details = `30ターンの激闘の末、両者ともに決着がつかず引き分けとなりました。`;
-    } else if (result.winner) {
-      const isP1Win = result.winner.name === this.p1Monster?.name;
-      resultTitle = `${result.winner.name} の 勝利！`;
-      winnerSprite = isP1Win ? this.p1SpriteUrl : this.p2SpriteUrl;
-
-      const reasonStr = result.winReason === 'knockout'
-        ? `${result.turns}ターンでノックアウト勝利！`
-        : `30ターン制限によるHP割合判定勝利！`;
-
-      details = `
-        <div style="margin: 12px 0;">
-          <img src="${winnerSprite}" style="width: 120px; height: 120px; image-rendering: pixelated; animation: idle-float 1.8s ease-in-out infinite;" />
-        </div>
-        <p style="font-size: 14px; color: var(--text-dim);">${reasonStr}</p>
-        <p style="font-size: 13px; color: #cbd5e1; margin-top: 4px;">
-          残りHP: ${isP1Win ? result.p1FinalHp : result.p2FinalHp} / ${result.winner.maxHp}
-        </p>
-      `;
-    }
+    const isP1Win = result.winner?.name === this.p1Monster?.name;
+    const winnerMonster = result.winner ? (isP1Win ? this.p1Monster : this.p2Monster) : null;
 
     const modal = document.createElement('div');
     modal.className = 'result-overlay';
-    modal.innerHTML = `
-      <div class="result-card">
-        <h2 class="winner-badge">${resultTitle}</h2>
-        ${details}
-        <div style="display:flex; flex-direction:column; gap:10px; margin-top:20px;">
-          <button class="start-btn" id="rematch-btn">もう一度たたかう（再戦）</button>
-          <button class="random-btn" id="new-battle-btn" style="padding:10px; font-size:14px;">別の名前でたたかう</button>
+
+    let modalViewer: Monster3DViewer | null = null;
+
+    const renderModalContent = () => {
+      let details = '';
+
+      if (result.isDraw) {
+        resultTitle = 'DRAW (引き分け！)';
+        details = `<p style="margin: 12px 0;">30ターンの激闘の末、両者ともに決着がつかず引き分けとなりました。</p>`;
+      } else if (result.winner && winnerMonster) {
+        resultTitle = `${result.winner.name} の 勝利！`;
+        winnerSprite = isP1Win ? this.p1SpriteUrl : this.p2SpriteUrl;
+
+        const reasonStr = result.winReason === 'knockout'
+          ? `${result.turns}ターンでノックアウト勝利！`
+          : `30ターン制限によるHP割合判定勝利！`;
+
+        const previewHtml = this.displayMode === '2d'
+          ? `<div style="margin: 12px 0;"><img src="${winnerSprite}" style="width: 120px; height: 120px; image-rendering: pixelated; animation: idle-float 1.8s ease-in-out infinite;" /></div>`
+          : `<div style="margin: 12px 0; width: 140px; height: 140px; margin-left: auto; margin-right: auto; position: relative;" id="modal-winner-3d-wrap"></div>`;
+
+        const modalToggleHtml = `
+          <div style="display:flex; justify-content:center; gap:6px; margin: 8px 0;">
+            <button class="mode-toggle-btn ${this.displayMode !== '2d' ? 'active' : ''}" id="modal-toggle-3d" style="font-size:9px; padding:3px 10px;">✨ 3D</button>
+            <button class="mode-toggle-btn ${this.displayMode === '2d' ? 'active active-2d' : ''}" id="modal-toggle-2d" style="font-size:9px; padding:3px 10px;">👾 2D</button>
+          </div>
+        `;
+
+        details = `
+          ${modalToggleHtml}
+          ${previewHtml}
+          <p style="font-size: 14px; color: var(--text-dim);">${reasonStr}</p>
+          <p style="font-size: 13px; color: #cbd5e1; margin-top: 4px;">
+            残りHP: ${isP1Win ? result.p1FinalHp : result.p2FinalHp} / ${result.winner.maxHp}
+          </p>
+        `;
+      }
+
+      modal.innerHTML = `
+        <div class="result-card">
+          <h2 class="winner-badge">${resultTitle}</h2>
+          ${details}
+          <div style="display:flex; flex-direction:column; gap:10px; margin-top:20px;">
+            <button class="start-btn" id="rematch-btn">もう一度たたかう（再戦）</button>
+            <button class="random-btn" id="new-battle-btn" style="padding:10px; font-size:14px;">別の名前でたたかう</button>
+          </div>
         </div>
-      </div>
-    `;
+      `;
 
+      if (modalViewer) {
+        modalViewer.dispose();
+        modalViewer = null;
+      }
+
+      if (this.displayMode !== '2d' && winnerMonster) {
+        const modalWrap = modal.querySelector('#modal-winner-3d-wrap') as HTMLElement;
+        if (modalWrap) {
+          modalViewer = new Monster3DViewer(
+            modalWrap,
+            winnerMonster.spriteSeed,
+            winnerMonster.types[0],
+            winnerMonster.types[1],
+            winnerMonster.stats,
+            { autoRotate: true, viewAngle: 'front' }
+          );
+        }
+      }
+
+      modal.querySelector('#modal-toggle-3d')?.addEventListener('click', () => {
+        retroAudio.playSelect();
+        this.displayMode = '3d';
+        renderModalContent();
+      });
+
+      modal.querySelector('#modal-toggle-2d')?.addEventListener('click', () => {
+        retroAudio.playSelect();
+        this.displayMode = '2d';
+        renderModalContent();
+      });
+
+      modal.querySelector('#rematch-btn')?.addEventListener('click', () => {
+        retroAudio.playSelect();
+        cleanupModal();
+        this.startBattle();
+      });
+
+      modal.querySelector('#new-battle-btn')?.addEventListener('click', () => {
+        retroAudio.playSelect();
+        cleanupModal();
+        this.renderInputView();
+      });
+    };
+
+    const cleanupModal = () => {
+      if (modalViewer) {
+        modalViewer.dispose();
+        modalViewer = null;
+      }
+      modal.remove();
+    };
+
+    renderModalContent();
     document.body.appendChild(modal);
-
-    modal.querySelector('#rematch-btn')?.addEventListener('click', () => {
-      retroAudio.playSelect();
-      modal.remove();
-      this.startBattle();
-    });
-
-    modal.querySelector('#new-battle-btn')?.addEventListener('click', () => {
-      retroAudio.playSelect();
-      modal.remove();
-      this.renderInputView();
-    });
   }
 }
